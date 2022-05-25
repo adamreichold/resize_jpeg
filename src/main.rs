@@ -1,14 +1,14 @@
 use std::error::Error;
 use std::fs::read_dir;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::spawn;
 
 use gio::prelude::{ApplicationExt, ApplicationExtManual};
 use glib::{
-    clone, home_dir, user_config_dir, Continue, GString, KeyFile, KeyFileFlags, MainContext,
-    Sender, PRIORITY_DEFAULT,
+    clone, user_config_dir, Continue, GString, KeyFile, KeyFileFlags, MainContext, Sender,
+    PRIORITY_DEFAULT,
 };
 use gtk::{
     prelude::{
@@ -17,7 +17,7 @@ use gtk::{
     },
     Adjustment, Application, ButtonsType, Dialog, DialogFlags, Entry, EntryIconPosition,
     FileChooserAction, FileChooserNative, Grid, Label, MessageDialog, MessageType, Orientation,
-    ProgressBar, ResponseType, Scale, SpinButton, NONE_WINDOW,
+    ProgressBar, ResponseType, Scale, SpinButton, Window,
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -41,7 +41,7 @@ fn show_dialog(application: &Application) {
 
     let dialog = Dialog::with_buttons(
         Some("Resize JPEG"),
-        NONE_WINDOW,
+        Window::NONE,
         DialogFlags::empty(),
         &[("Ok", ResponseType::Ok), ("Cancel", ResponseType::Cancel)],
     );
@@ -159,23 +159,13 @@ fn show_dialog(application: &Application) {
 
             let _ = settings.save_to_file(&settings_file);
 
-            let mozjpeg_dir = settings.string("paths", "mozjpeg_dir").map(|dir| PathBuf::from(&dir)).unwrap_or_else(|_| {
-                let mut mozjpeg_dir = home_dir();
-
-                mozjpeg_dir.push("bin");
-                mozjpeg_dir.push("mozjpeg");
-
-                mozjpeg_dir
-            });
-
-            show_progress_dialog(&application, mozjpeg_dir, input_dir, output_dir, size, quality);
+            show_progress_dialog(&application, input_dir, output_dir, size, quality);
         }
     }));
 }
 
 fn show_progress_dialog(
     application: &Application,
-    mozjpeg_dir: PathBuf,
     input_dir: GString,
     output_dir: GString,
     size: f64,
@@ -183,7 +173,7 @@ fn show_progress_dialog(
 ) {
     let dialog = Dialog::with_buttons(
         Some("Resize JPEG"),
-        NONE_WINDOW,
+        Window::NONE,
         DialogFlags::empty(),
         &[("Cancel", ResponseType::Cancel)],
     );
@@ -234,7 +224,6 @@ fn show_progress_dialog(
             .send(
                 match run_operation(
                     &progress_sender,
-                    &mozjpeg_dir,
                     Path::new(&input_dir),
                     Path::new(&output_dir),
                     size,
@@ -256,7 +245,6 @@ enum Message {
 
 fn run_operation(
     progress_sender: &Sender<Message>,
-    mozjpeg_dir: &Path,
     input_dir: &Path,
     output_dir: &Path,
     size: f64,
@@ -297,9 +285,7 @@ fn run_operation(
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let cjpeg = Command::new("./bin/cjpeg")
-            .current_dir(mozjpeg_dir)
-            .env("LD_LIBRARY_PATH", "./lib64")
+        let cjpeg = Command::new("cjpeg-static")
             .arg("-quality")
             .arg(format!("{:.0}", quality))
             .arg("-targa")

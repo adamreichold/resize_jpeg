@@ -5,7 +5,7 @@ authors = ["Adam Reichold <adam.reichold@t-online.de>"]
 edition = "2018"
 
 [dependencies]
-gio = { version = "0.14", features = ["v2_62"] }
-glib = { version = "0.14", features = ["v2_62"] }
-gtk = { version = "0.14", features = ["v3_24_9"] }
+gio = { version = "0.15", features = ["v2_62"] }
+glib = { version = "0.15", features = ["v2_62"] }
+gtk = { version = "0.15", features = ["v3_24_9"] }
 rayon = "1.4"
