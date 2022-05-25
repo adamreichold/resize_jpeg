@@ -64,6 +64,7 @@ fn show_dialog(application: &Application) {
             None,
         );
 
+        chooser.set_current_folder(entry.text().as_str());
         chooser.set_local_only(true);
 
         if chooser.run() == ResponseType::Accept {
@@ -89,6 +90,7 @@ fn show_dialog(application: &Application) {
             None,
         );
 
+        chooser.set_current_folder(entry.text().as_str());
         chooser.set_local_only(true);
 
         if chooser.run() == ResponseType::Accept {
