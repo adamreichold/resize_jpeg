@@ -206,7 +206,11 @@ fn show_progress_dialog(
             Message::Error(message) => {
                 dialog.close();
 
-                let dialog = MessageDialog::new(Some(&dialog), DialogFlags::empty(), MessageType::Error, ButtonsType::None, &message);
+                let dialog = MessageDialog::new(Some(&dialog), DialogFlags::empty(), MessageType::Error, ButtonsType::Close, &message);
+
+                dialog.connect_response(|dialog, _| {
+                    dialog.close();
+                });
 
                 dialog.show_all();
                 application.add_window(&dialog);
