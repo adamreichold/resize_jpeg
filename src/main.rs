@@ -1,7 +1,7 @@
 use std::error::Error;
-use std::fs::read_dir;
+use std::fs::{create_dir_all, read_dir, write};
+use std::panic::catch_unwind;
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::spawn;
 
@@ -13,12 +13,14 @@ use glib::{
 use gtk::{
     prelude::{
         BoxExt, DialogExt, EntryExt, FileChooserExt, GridExt, GtkApplicationExt, GtkWindowExt,
-        NativeDialogExt, ProgressBarExt, RangeExt, SpinButtonExt, WidgetExt,
+        NativeDialogExt, ProgressBarExt, RangeExt, ScaleExt, SpinButtonExt, WidgetExt,
     },
     Adjustment, Application, ButtonsType, Dialog, DialogFlags, Entry, EntryIconPosition,
     FileChooserAction, FileChooserNative, Grid, Label, MessageDialog, MessageType, Orientation,
     ProgressBar, ResponseType, Scale, SpinButton, Window,
 };
+use image::{imageops::FilterType, io::Reader as ImageReader};
+use mozjpeg::{ColorSpace, Compress, ScanMode};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 fn main() {
@@ -122,6 +124,8 @@ fn show_dialog(application: &Application) {
             0.,
         )),
     );
+
+    quality.set_digits(0);
 
     let grid = Grid::new();
 
@@ -272,6 +276,8 @@ fn run_operation(
         return Err("Did not find any input files".into());
     }
 
+    create_dir_all(output_dir)?;
+
     let done = AtomicUsize::new(0);
 
     files.par_iter().try_for_each(|file| {
@@ -282,44 +288,29 @@ fn run_operation(
         output_file.push(file);
         output_file.set_extension("jpg");
 
-        let mut convert = Command::new("convert")
-            .arg("-resize")
-            .arg(format!("{:.0}x{:.0}", size, size))
-            .arg(input_file)
-            .arg("TGA:-")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let image = ImageReader::open(input_file)?
+            .decode()?
+            .resize(size as u32, size as u32, FilterType::Lanczos3)
+            .into_rgb8();
 
-        let cjpeg = Command::new("cjpeg-static")
-            .arg("-quality")
-            .arg(format!("{:.0}", quality))
-            .arg("-targa")
-            .arg("-outfile")
-            .arg(output_file)
-            .stdin(convert.stdout.take().unwrap())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let buffer = catch_unwind(|| {
+            let mut compress = Compress::new(ColorSpace::JCS_RGB);
+            compress.set_size(image.width() as usize, image.height() as usize);
+            compress.set_mem_dest();
 
-        let output = convert.wait_with_output()?;
+            compress.set_scan_optimization_mode(ScanMode::AllComponentsTogether);
+            compress.set_use_scans_in_trellis(true);
+            compress.set_quality(quality as f32);
 
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to resize: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )
-            .into());
-        }
+            compress.start_compress();
+            assert!(compress.write_scanlines(&image));
+            compress.finish_compress();
 
-        let output = cjpeg.wait_with_output()?;
+            compress.data_to_vec().unwrap()
+        })
+        .map_err(|_| "Failed to compress JPEG")?;
 
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to encode: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )
-            .into());
-        }
+        write(output_file, buffer)?;
 
         let done = done.fetch_add(1, Ordering::SeqCst) + 1;
 
