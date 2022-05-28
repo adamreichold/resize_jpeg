@@ -22,6 +22,7 @@ use gtk::{
 use image::{imageops::FilterType, io::Reader as ImageReader};
 use mozjpeg::{ColorSpace, Compress, ScanMode};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rexiv2::Metadata;
 
 fn main() {
     let application = Application::new(None, Default::default());
@@ -288,10 +289,12 @@ fn run_operation(
         output_file.push(file);
         output_file.set_extension("jpg");
 
-        let image = ImageReader::open(input_file)?
+        let image = ImageReader::open(&input_file)?
             .decode()?
             .resize(size as u32, size as u32, FilterType::Lanczos3)
             .into_rgb8();
+
+        let metadata = Metadata::new_from_path(&input_file)?;
 
         let buffer = catch_unwind(|| {
             let mut compress = Compress::new(ColorSpace::JCS_RGB);
@@ -310,7 +313,9 @@ fn run_operation(
         })
         .map_err(|_| "Failed to compress JPEG")?;
 
-        write(output_file, buffer)?;
+        write(&output_file, buffer)?;
+
+        metadata.save_to_file(&output_file)?;
 
         let done = done.fetch_add(1, Ordering::SeqCst) + 1;
 

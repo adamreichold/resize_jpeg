@@ -352,6 +352,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gexiv2-sys"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3e66ac4aab8b401ca63838116d080b98e12fb5056e1c2a44e35c93da3526d13"
+dependencies = [
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "gio"
 version = "0.15.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -527,7 +537,7 @@ dependencies = [
  "color_quant",
  "jpeg-decoder",
  "num-iter",
- "num-rational",
+ "num-rational 0.4.0",
  "num-traits",
  "tiff",
 ]
@@ -629,6 +639,17 @@ name = "num-iter"
 version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d03e6c028c5dc5cac6e2dec0efda81fc887605bb3d884578bb6d6bf7514e252"
+dependencies = [
+ "autocfg",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "num-rational"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c000134b5dbf44adc5cb772486d335293351644b801551abe8f75c84cfa4aef"
 dependencies = [
  "autocfg",
  "num-integer",
@@ -810,6 +831,18 @@ dependencies = [
  "mozjpeg",
  "mozjpeg-sys",
  "rayon",
+ "rexiv2",
+]
+
+[[package]]
+name = "rexiv2"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab34307334dcf90c2f9afeda08e0c52310f4d9f282cf6e8ec6a6ffb0b09826a5"
+dependencies = [
+ "gexiv2-sys",
+ "libc",
+ "num-rational 0.2.4",
 ]
 
 [[package]]
