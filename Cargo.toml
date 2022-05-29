@@ -2,7 +2,9 @@
 name = "resize_jpeg"
 version = "0.1.0"
 authors = ["Adam Reichold <adam.reichold@t-online.de>"]
-edition = "2018"
+license = "GPL-3.0"
+repository = "https://github.com/adamreichold/resize_jpeg"
+edition = "2021"
 
 [dependencies]
 gio = { version = "0.15", features = ["v2_62"] }
