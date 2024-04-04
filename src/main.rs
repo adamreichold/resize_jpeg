@@ -7,8 +7,8 @@ use std::thread::spawn;
 
 use gio::prelude::{ApplicationExt, ApplicationExtManual};
 use glib::{
-    clone, user_config_dir, Continue, GString, KeyFile, KeyFileFlags, MainContext, Sender,
-    PRIORITY_DEFAULT,
+    clone, source::Priority, user_config_dir, ControlFlow, GString, KeyFile, KeyFileFlags,
+    MainContext, Sender,
 };
 use gtk::{
     prelude::{
@@ -198,7 +198,7 @@ fn show_progress_dialog(
         dialog.close();
     });
 
-    let (progress_sender, progress_receiver) = MainContext::channel::<Message>(PRIORITY_DEFAULT);
+    let (progress_sender, progress_receiver) = MainContext::channel::<Message>(Priority::DEFAULT);
 
     progress_receiver.attach(
         None,
@@ -206,7 +206,7 @@ fn show_progress_dialog(
             Message::Progress(fraction) => {
                 progress_bar.set_fraction(fraction);
 
-                Continue(true)
+                ControlFlow::Continue
             },
             Message::Error(message) => {
                 dialog.close();
@@ -220,12 +220,12 @@ fn show_progress_dialog(
                 dialog.show_all();
                 application.add_window(&dialog);
 
-                Continue(false)
+                ControlFlow::Break
             }
             Message::Done => {
                 dialog.close();
 
-                Continue(false)
+                ControlFlow::Break
             }
         }),
     );
@@ -299,17 +299,14 @@ fn run_operation(
         let buffer = catch_unwind(|| {
             let mut compress = Compress::new(ColorSpace::JCS_RGB);
             compress.set_size(image.width() as usize, image.height() as usize);
-            compress.set_mem_dest();
 
             compress.set_scan_optimization_mode(ScanMode::AllComponentsTogether);
             compress.set_use_scans_in_trellis(true);
             compress.set_quality(quality as f32);
 
-            compress.start_compress();
-            assert!(compress.write_scanlines(&image));
-            compress.finish_compress();
-
-            compress.data_to_vec().unwrap()
+            let mut compress = compress.start_compress(Vec::new()).unwrap();
+            compress.write_scanlines(&image).unwrap();
+            compress.finish().unwrap()
         })
         .map_err(|_| "Failed to compress JPEG")?;
 
