@@ -5,11 +5,10 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::spawn;
 
+use futures_channel::mpsc::{unbounded, UnboundedSender};
+use futures_util::StreamExt;
 use gio::prelude::{ApplicationExt, ApplicationExtManual};
-use glib::{
-    clone, source::Priority, user_config_dir, ControlFlow, GString, KeyFile, KeyFileFlags,
-    MainContext, Sender,
-};
+use glib::{clone, spawn_future_local, user_config_dir, GString, KeyFile, KeyFileFlags};
 use gtk::{
     prelude::{
         BoxExt, DialogExt, EntryExt, FileChooserExt, GridExt, GtkApplicationExt, GtkWindowExt,
@@ -19,7 +18,7 @@ use gtk::{
     FileChooserAction, FileChooserNative, Grid, Label, MessageDialog, MessageType, Orientation,
     ProgressBar, ResponseType, Scale, SpinButton, Window,
 };
-use image::{imageops::FilterType, io::Reader as ImageReader};
+use image::{imageops::FilterType, ImageReader};
 use mozjpeg::{ColorSpace, Compress, ScanMode};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rexiv2::Metadata;
@@ -198,41 +197,40 @@ fn show_progress_dialog(
         dialog.close();
     });
 
-    let (progress_sender, progress_receiver) = MainContext::channel::<Message>(Priority::DEFAULT);
+    let (progress_sender, mut progress_receiver) = unbounded::<Message>();
 
-    progress_receiver.attach(
-        None,
-        clone!(@strong application, @strong dialog => move |message| match message {
-            Message::Progress(fraction) => {
-                progress_bar.set_fraction(fraction);
-
-                ControlFlow::Continue
-            },
-            Message::Error(message) => {
-                dialog.close();
-
-                let dialog = MessageDialog::new(Some(&dialog), DialogFlags::empty(), MessageType::Error, ButtonsType::Close, &message);
-
-                dialog.connect_response(|dialog, _| {
+    spawn_future_local(clone!(@strong application, @strong dialog => async move {
+        while let Some(message) = progress_receiver.next().await {
+            match message {
+                Message::Progress(fraction) => {
+                    progress_bar.set_fraction(fraction);
+                },
+                Message::Error(message) => {
                     dialog.close();
-                });
 
-                dialog.show_all();
-                application.add_window(&dialog);
+                    let dialog = MessageDialog::new(Some(&dialog), DialogFlags::empty(), MessageType::Error, ButtonsType::Close, &message);
 
-                ControlFlow::Break
+                    dialog.connect_response(|dialog, _| {
+                        dialog.close();
+                    });
+
+                    dialog.show_all();
+                    application.add_window(&dialog);
+
+                    break;
+                }
+                Message::Done => {
+                    dialog.close();
+
+                    break;
+                }
             }
-            Message::Done => {
-                dialog.close();
-
-                ControlFlow::Break
-            }
-        }),
-    );
+        }
+    }));
 
     spawn(move || {
         progress_sender
-            .send(
+            .unbounded_send(
                 match run_operation(
                     &progress_sender,
                     Path::new(&input_dir),
@@ -255,7 +253,7 @@ enum Message {
 }
 
 fn run_operation(
-    progress_sender: &Sender<Message>,
+    progress_sender: &UnboundedSender<Message>,
     input_dir: &Path,
     output_dir: &Path,
     size: f64,
@@ -290,7 +288,8 @@ fn run_operation(
         output_file.set_extension("jpg");
 
         let image = ImageReader::open(&input_file)?
-            .decode()?
+            .decode()
+            .map_err(|err| format!("Failed to decode {}: {}", input_file.display(), err))?
             .resize(size as u32, size as u32, FilterType::Lanczos3)
             .into_rgb8();
 
@@ -317,7 +316,7 @@ fn run_operation(
         let done = done.fetch_add(1, Ordering::SeqCst) + 1;
 
         progress_sender
-            .send(Message::Progress(done as f64 / files.len() as f64))
+            .unbounded_send(Message::Progress(done as f64 / files.len() as f64))
             .unwrap();
 
         Ok(())
