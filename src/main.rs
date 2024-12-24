@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use std::error::Error;
 use std::fs::{create_dir_all, read_dir, write};
 use std::panic::catch_unwind;
@@ -7,12 +9,12 @@ use std::thread::spawn;
 
 use futures_channel::mpsc::{unbounded, UnboundedSender};
 use futures_util::StreamExt;
-use gio::prelude::{ApplicationExt, ApplicationExtManual};
-use glib::{clone, spawn_future_local, user_config_dir, GString, KeyFile, KeyFileFlags};
-use gtk::{
+use gtk4::{
+    gio::prelude::{ApplicationExt, ApplicationExtManual},
+    glib::{clone, spawn_future_local, user_config_dir, ExitCode, GString, KeyFile, KeyFileFlags},
     prelude::{
-        BoxExt, DialogExt, EntryExt, FileChooserExt, GridExt, GtkApplicationExt, GtkWindowExt,
-        NativeDialogExt, ProgressBarExt, RangeExt, ScaleExt, SpinButtonExt, WidgetExt,
+        BoxExt, DialogExt, EditableExt, EntryExt, FileChooserExt, GridExt, GtkApplicationExt,
+        GtkWindowExt, NativeDialogExt, RangeExt, ScaleExt, WidgetExt,
     },
     Adjustment, Application, ButtonsType, Dialog, DialogFlags, Entry, EntryIconPosition,
     FileChooserAction, FileChooserNative, Grid, Label, MessageDialog, MessageType, Orientation,
@@ -23,14 +25,12 @@ use mozjpeg::{ColorSpace, Compress, ScanMode};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rexiv2::Metadata;
 
-fn main() {
-    let application = Application::new(None, Default::default());
+fn main() -> ExitCode {
+    let application = Application::builder().build();
 
-    application.connect_activate(clone!(@strong application => move |_| {
-        show_dialog(&application);
-    }));
+    application.connect_activate(show_dialog);
 
-    application.run();
+    application.run()
 }
 
 fn show_dialog(application: &Application) {
@@ -57,22 +57,30 @@ fn show_dialog(application: &Application) {
     input_dir.set_icon_from_icon_name(EntryIconPosition::Secondary, Some("document-open"));
     input_dir.set_icon_activatable(EntryIconPosition::Secondary, true);
 
-    input_dir.connect_icon_press(clone!(@strong dialog => move |entry, _, _| {
-        let chooser = FileChooserNative::new(
-            Some("Select input directory"),
-            Some(&dialog),
-            FileChooserAction::SelectFolder,
-            None,
-            None,
-        );
+    input_dir.connect_icon_press(clone!(
+        #[strong]
+        dialog,
+        move |entry, _| {
+            let chooser = FileChooserNative::new(
+                Some("Select input directory"),
+                Some(&dialog),
+                FileChooserAction::SelectFolder,
+                None,
+                None,
+            );
 
-        chooser.set_current_folder(entry.text().as_str());
-        chooser.set_local_only(true);
+            chooser.connect_response(clone!(
+                #[strong]
+                entry,
+                move |chooser, response| if response == ResponseType::Accept {
+                    entry.set_text(chooser.current_name().unwrap().as_str());
+                }
+            ));
 
-        if chooser.run() == ResponseType::Accept {
-            entry.set_text(chooser.filename().unwrap().to_str().unwrap());
+            chooser.set_current_name(entry.text().as_str());
+            chooser.show();
         }
-    }));
+    ));
 
     let output_dir = Entry::new();
 
@@ -83,22 +91,30 @@ fn show_dialog(application: &Application) {
     output_dir.set_icon_from_icon_name(EntryIconPosition::Secondary, Some("document-open"));
     output_dir.set_icon_activatable(EntryIconPosition::Secondary, true);
 
-    output_dir.connect_icon_press(clone!(@strong dialog => move |entry, _, _| {
-        let chooser = FileChooserNative::new(
-            Some("Select output directory"),
-            Some(&dialog),
-            FileChooserAction::SelectFolder,
-            None,
-            None,
-        );
+    output_dir.connect_icon_press(clone!(
+        #[strong]
+        dialog,
+        move |entry, _| {
+            let chooser = FileChooserNative::new(
+                Some("Select output directory"),
+                Some(&dialog),
+                FileChooserAction::SelectFolder,
+                None,
+                None,
+            );
 
-        chooser.set_current_folder(entry.text().as_str());
-        chooser.set_local_only(true);
+            chooser.connect_response(clone!(
+                #[strong]
+                entry,
+                move |chooser, response| if response == ResponseType::Accept {
+                    entry.set_text(chooser.current_name().unwrap().as_str());
+                }
+            ));
 
-        if chooser.run() == ResponseType::Accept {
-            entry.set_text(chooser.filename().unwrap().to_str().unwrap());
+            chooser.set_current_name(entry.text().as_str());
+            chooser.show();
         }
-    }));
+    ));
 
     let size = SpinButton::new(
         Some(&Adjustment::new(
@@ -144,30 +160,34 @@ fn show_dialog(application: &Application) {
     grid.set_row_spacing(10);
     grid.set_column_spacing(10);
 
-    dialog.content_area().pack_start(&grid, true, true, 10);
+    dialog.content_area().append(&grid);
 
-    dialog.show_all();
+    dialog.show();
     application.add_window(&dialog);
 
-    dialog.connect_response(clone!(@strong application => move |dialog, response| {
-        dialog.close();
+    dialog.connect_response(clone!(
+        #[strong]
+        application,
+        move |dialog, response| {
+            dialog.close();
 
-        if response == ResponseType::Ok {
-            let input_dir = input_dir.text();
-            let output_dir = output_dir.text();
-            let size = size.value();
-            let quality = quality.value();
+            if response == ResponseType::Ok {
+                let input_dir = input_dir.text();
+                let output_dir = output_dir.text();
+                let size = size.value();
+                let quality = quality.value();
 
-            settings.set_string("paths", "input_dir", &input_dir);
-            settings.set_string("paths", "output_dir", &output_dir);
-            settings.set_double("args", "size", size);
-            settings.set_double("args", "quality", quality);
+                settings.set_string("paths", "input_dir", &input_dir);
+                settings.set_string("paths", "output_dir", &output_dir);
+                settings.set_double("args", "size", size);
+                settings.set_double("args", "quality", quality);
 
-            let _ = settings.save_to_file(&settings_file);
+                let _ = settings.save_to_file(&settings_file);
 
-            show_progress_dialog(&application, input_dir, output_dir, size, quality);
+                show_progress_dialog(&application, input_dir, output_dir, size, quality);
+            }
         }
-    }));
+    ));
 }
 
 fn show_progress_dialog(
@@ -186,11 +206,9 @@ fn show_progress_dialog(
 
     let progress_bar = ProgressBar::new();
 
-    dialog
-        .content_area()
-        .pack_start(&progress_bar, true, true, 10);
+    dialog.content_area().append(&progress_bar);
 
-    dialog.show_all();
+    dialog.show();
     application.add_window(&dialog);
 
     dialog.connect_response(|dialog, _| {
@@ -199,34 +217,46 @@ fn show_progress_dialog(
 
     let (progress_sender, mut progress_receiver) = unbounded::<Message>();
 
-    spawn_future_local(clone!(@strong application, @strong dialog => async move {
-        while let Some(message) = progress_receiver.next().await {
-            match message {
-                Message::Progress(fraction) => {
-                    progress_bar.set_fraction(fraction);
-                },
-                Message::Error(message) => {
-                    dialog.close();
-
-                    let dialog = MessageDialog::new(Some(&dialog), DialogFlags::empty(), MessageType::Error, ButtonsType::Close, &message);
-
-                    dialog.connect_response(|dialog, _| {
+    spawn_future_local(clone!(
+        #[strong]
+        application,
+        #[strong]
+        dialog,
+        async move {
+            while let Some(message) = progress_receiver.next().await {
+                match message {
+                    Message::Progress(fraction) => {
+                        progress_bar.set_fraction(fraction);
+                    }
+                    Message::Error(message) => {
                         dialog.close();
-                    });
 
-                    dialog.show_all();
-                    application.add_window(&dialog);
+                        let dialog = MessageDialog::new(
+                            Some(&dialog),
+                            DialogFlags::empty(),
+                            MessageType::Error,
+                            ButtonsType::Close,
+                            &message,
+                        );
 
-                    break;
-                }
-                Message::Done => {
-                    dialog.close();
+                        dialog.connect_response(|dialog, _| {
+                            dialog.close();
+                        });
 
-                    break;
+                        dialog.show();
+                        application.add_window(&dialog);
+
+                        break;
+                    }
+                    Message::Done => {
+                        dialog.close();
+
+                        break;
+                    }
                 }
             }
         }
-    }));
+    ));
 
     spawn(move || {
         progress_sender
@@ -307,7 +337,7 @@ fn run_operation(
             compress.write_scanlines(&image).unwrap();
             compress.finish().unwrap()
         })
-        .map_err(|_| "Failed to compress JPEG")?;
+        .map_err(|err| format!("Failed to compress {}: {:?}", input_file.display(), err))?;
 
         write(&output_file, buffer)?;
 

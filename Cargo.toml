@@ -9,9 +9,7 @@ edition = "2021"
 [dependencies]
 futures-channel = "0.3"
 futures-util = "0.3"
-gio = { version = "0.18", features = ["v2_62"] }
-glib = { version = "0.18", features = ["v2_62"] }
-gtk = { version = "0.18", features = ["v3_24_9"] }
+gtk4 = { version = "0.9", features = ["v4_16"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "rayon", "tiff"] }
 mozjpeg = "0.10"
 mozjpeg-sys = { version = "2.1", features = ["jpeg80_abi"] }
